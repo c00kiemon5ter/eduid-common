@@ -88,6 +88,7 @@ def get_authn_response(settings, session, raw_response):
 
     oq_cache = OutstandingQueriesCache(session)
     outstanding_queries = oq_cache.outstanding_queries()
+    logger.debug('Outstanding queries:\n{!s}\n\n'.format(pprint.pformat(outstanding_queries)))
 
     try:
         # process the authentication response
