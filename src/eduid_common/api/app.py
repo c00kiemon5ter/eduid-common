@@ -37,6 +37,7 @@ it with all attributes common to all eduID services.
 from eduid_userdb import UserDB
 from eduid_common.api.logging import init_logging
 from eduid_common.api.exceptions import init_exception_handlers, init_sentry
+from eduid_common.api.mailer import init_mailer
 
 
 def etcd_config(name, app):
@@ -113,6 +114,7 @@ def eduid_init_app(name, config, cfg_func=etcd_config, app=True,
     app = init_logging(app)
     app = init_exception_handlers(app)
     app = init_sentry(app)
+    app = init_mailer(app)
     if sessions is True:
         from eduid_common.api.session import SessionFactory
         app.session_interface = SessionFactory(app.config)
