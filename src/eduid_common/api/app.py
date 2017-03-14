@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016 NORDUnet A/S
+# Copyright (c) 2016, 2017 NORDUnet A/S
 # All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or
@@ -34,47 +34,13 @@ Define a `eduid_init_app` function to create a Flask app and update
 it with all attributes common to all eduID services.
 """
 
-
-from werkzeug.contrib.fixers import ProxyFix
 from eduid_userdb import UserDB
-from eduid_common.authn.middleware import AuthnApp
-from eduid_common.api.request import Request
-from eduid_common.api.session import SessionFactory
 from eduid_common.api.logging import init_logging
 from eduid_common.api.exceptions import init_exception_handlers, init_sentry
-from eduid_common.config.parsers.etcd import EtcdConfigParser
 
 
-def eduid_init_app_no_db(name, config, app_class=AuthnApp):
-    """
-    Create and prepare the flask app for eduID APIs with all the attributes
-    common to all  apps.
-
-     * Parse and merge configurations
-     * Add logging
-     * Add db connection
-     * Add eduID session
-
-    :param name: The name of the instance, it will affect the configuration file
-                 loaded from the filesystem.
-    :type name: str
-    :param config: any additional configuration settings. Specially useful
-                   in test cases
-    :type config: dict
-    :param app_class: The class used to build the flask app. Should be a
-                      descendant of flask.Flask
-    :type app_class: type
-
-    :return: the flask application.
-    :rtype: flask.Flask
-    """
-    app = app_class(name)
-    app.wsgi_app = ProxyFix(app.wsgi_app)
-    app.request_class = Request
-
-    # Init etcd config parsers
-    common_parser = EtcdConfigParser('/eduid/webapp/common/')
-    app_parser = EtcdConfigParser('/eduid/webapp/{!s}/'.format(name))
+def etcd_config(name, app):
+    from eduid_common.config.parsers.etcd import EtcdConfigParser
 
     # Load project wide default settings
     app.config.from_object('eduid_webapp.settings.common')
@@ -85,10 +51,60 @@ def eduid_init_app_no_db(name, config, app_class=AuthnApp):
     except ImportError:  # No app specific default config found
         pass
 
+    # Init etcd config parsers
+    common_parser = EtcdConfigParser('/eduid/webapp/common/')
+    app_parser = EtcdConfigParser('/eduid/webapp/{!s}/'.format(name))
+
     # Load optional project wide settings
-    app.config.update(common_parser.read_configuration(silent=True))
+    app.config.update(common_parser.read_configuration(silent = True))
     # Load optional app specific settings
-    app.config.update(app_parser.read_configuration(silent=True))
+    app.config.update(app_parser.read_configuration(silent = True))
+
+
+def eduid_init_app(name, config, cfg_func=etcd_config, app=True,
+                   userdb=True, sessions=True):
+    """
+    Create and prepare the flask app for eduID APIs with all the attributes
+    common to all apps.
+
+     * Parse and merge configurations
+     * Add logging
+     * Add db connection
+     * Add eduID session
+
+    :param name:     The name of the instance, it will affect the configuration file
+                     loaded from the filesystem.
+    :param config:   any additional configuration settings. Specially useful
+                     in test cases
+    :param cfg_func: Callable to initialize config on the application instance
+    :param app:      The class used to build the flask app. Should be a
+                     descendant of flask.Flask
+    :param userdb:   User database, or True for default or False for none
+    :param sessions: Session factory class, or True for default or
+                     False for none
+
+    :type name:      str
+    :type config:    dict
+    :type cfg_func:  callable
+    :type app:       flask.Flask | bool
+    :type sessions:  SessionFactory | bool
+    :type userdb:    eduid_userdb.UserDB | bool
+
+    :return: the flask application.
+    :rtype: flask.Flask
+    """
+    if app is True:
+        # import here to not drag in dependencies for users supplying
+        # their own app_class
+        from eduid_common.authn.middleware import AuthnApp
+        from werkzeug.contrib.fixers import ProxyFix
+        from eduid_common.api.request import Request
+        app = AuthnApp(name)
+        app.wsgi_app = ProxyFix(app.wsgi_app)
+        app.request_class = Request
+
+    if cfg_func:
+        cfg_func(name, app)
 
     # Load optional init time settings
     app.config.update(config)
@@ -97,12 +113,19 @@ def eduid_init_app_no_db(name, config, app_class=AuthnApp):
     app = init_logging(app)
     app = init_exception_handlers(app)
     app = init_sentry(app)
-    app.session_interface = SessionFactory(app.config)
+    if sessions is True:
+        from eduid_common.api.session import SessionFactory
+        app.session_interface = SessionFactory(app.config)
+    elif sessions is not False:
+        app.session_interface = sessions
+
+    if userdb is True:
+        app.central_userdb = UserDB(app.config['MONGO_URI'], 'eduid_am')  # XXX: Needs updating when we change db
+    elif userdb is not False:
+        app.central_userdb = userdb
 
     return app
 
 
-def eduid_init_app(name, config, app_class=AuthnApp):
-    app = eduid_init_app_no_db(name, config, app_class=app_class)
-    app.central_userdb = UserDB(app.config['MONGO_URI'], 'eduid_am')  # XXX: Needs updating when we change db
-    return app
+def eduid_init_app_no_db(name, config, app=True):
+    eduid_init_app(name, config, app=app, userdb=False)
