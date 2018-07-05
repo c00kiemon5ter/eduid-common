@@ -112,7 +112,7 @@ class UnAuthnApp(Flask):
         next_url = get_current_url(environ)
 
         with self.request_context(environ):
-            cookie_name = self.config.get('SESSION_COOKIE_NAME', 'signup-sessid')
+            cookie_name = self.config.get('SESSION_COOKIE_NAME')
             if cookie_name not in request.cookies:
                 cookie = dump_cookie(cookie_name, session._session.token,
                                      max_age=int(self.config.get('PERMANENT_SESSION_LIFETIME')),
